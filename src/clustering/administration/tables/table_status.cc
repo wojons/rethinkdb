@@ -415,7 +415,7 @@ consider if `read_row_impl()` should be run in parallel if the user fetches many
 once. This will be much easier to implement once @vexocide's changes to
 `artificial_table_t` are merged in. */
 
-bool table_status_artificial_table_backend_t::read_row_impl(
+bool table_status_artificial_table_backend_t::format_row(
         namespace_id_t table_id,
         name_string_t table_name,
         name_string_t db_name,
