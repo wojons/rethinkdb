@@ -213,7 +213,8 @@ admin_artificial_tables_t::admin_artificial_tables_t(
         metadata_field(&cluster_semilattice_metadata_t::databases,
             _semilattice_view),
         _reactor_directory_view,
-        _name_client));
+        _name_client,
+        _next_reql_cluster_interface));
     backends[name_string_t::guarantee_valid("table_status")] =
         table_status_backend.get();
 

@@ -2,6 +2,7 @@
 #include "clustering/administration/tables/table_status.hpp"
 
 #include "clustering/administration/datum_adapter.hpp"
+#include "clustering/administration/real_reql_cluster_interface.hpp"
 #include "clustering/administration/servers/name_client.hpp"
 
 /* Names like `reactor_activity_entry_t::secondary_without_primary_t` are too long to
@@ -68,7 +69,7 @@ ql::datum_t convert_director_status_to_datum(
             }
         }
     }
-    object_builder.overwrite("state", ql::datum_t(state));
+    object_builder.overwrite("name", ql::datum_t(state));
     return std::move(object_builder).to_datum();
 }
 
@@ -109,7 +110,7 @@ ql::datum_t convert_replica_status_to_datum(
             }
         }
     }
-    object_builder.overwrite("state", ql::datum_t(std::move(state)));
+    object_builder.overwrite("name", ql::datum_t(std::move(state)));
     return std::move(object_builder).to_datum();
 }
 
@@ -119,7 +120,7 @@ ql::datum_t convert_nothing_status_to_datum(
         bool *is_unfinished_out) {
     *is_unfinished_out = true;
     ql::datum_object_builder_t object_builder;
-    object_builder.overwrite("server", convert_name_to_datum(name));
+    object_builder.overwrite("name", convert_name_to_datum(name));
     object_builder.overwrite("role", ql::datum_t("nothing"));
     const char *state;
     if (!status) {
@@ -153,6 +154,16 @@ ql::datum_t convert_nothing_status_to_datum(
     return std::move(object_builder).to_datum();
 }
 
+ql::datum_t convert_approx_doc_count_to_datum(
+        int64_t approx_doc_count) {
+    if (approx_doc_count == 0) {
+        return ql::datum_t("approximately 0 documents");
+    }
+    return ql::datum_t(datum_string_t(
+        strprintf("approximately %" PRId64 "-%" PRId64 " documents",
+            approx_doc_count/2, approx_doc_count*2)));
+}
+
 enum class table_readiness_t {
     unavailable,
     outdated_reads,
@@ -168,6 +179,7 @@ ql::datum_t convert_table_status_shard_to_datum(
         watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
                         namespace_directory_metadata_t> *dir,
         server_name_client_t *name_client,
+        const int64_t *maybe_approx_doc_count,
         table_readiness_t *readiness_out) {
     /* `server_states` will contain one entry per connected server. That entry will be a
     vector with the current state of each hash-shard on the server whose key range
@@ -287,7 +299,15 @@ ql::datum_t convert_table_status_shard_to_datum(
         }
     }
 
-    return std::move(array_builder).to_datum();
+    ql::datum_object_builder_t builder;
+    builder.overwrite("servers", std::move(array_builder).to_datum());
+    if (maybe_approx_doc_count != nullptr) {
+        builder.overwrite("num_docs",
+            convert_approx_doc_count_to_datum(*maybe_approx_doc_count));
+    } else {
+        builder.overwrite("num_docs", ql::datum_t("unknown"));
+    }
+    return std::move(builder).to_datum();
 }
 
 ql::datum_t convert_table_status_to_datum(
@@ -297,7 +317,8 @@ ql::datum_t convert_table_status_to_datum(
         const table_replication_info_t &repli_info,
         watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
                         namespace_directory_metadata_t> *dir,
-        server_name_client_t *name_client) {
+        server_name_client_t *name_client,
+        const std::vector<int64_t> *maybe_keys_in_shards) {
     ql::datum_object_builder_t builder;
     builder.overwrite("name", convert_name_to_datum(table_name));
     builder.overwrite("db", convert_name_to_datum(db_name));
@@ -314,6 +335,7 @@ ql::datum_t convert_table_status_to_datum(
                 repli_info.config.shards[i],
                 dir,
                 name_client,
+                maybe_keys_in_shards != nullptr ? &maybe_keys_in_shards->at(i) : nullptr,
                 &this_shard_readiness));
         readiness = std::min(readiness, this_shard_readiness);
     }
@@ -328,25 +350,98 @@ ql::datum_t convert_table_status_to_datum(
     builder.overwrite("ready_completely", ql::datum_t::boolean(
         readiness == table_readiness_t::finished));
 
+    if (maybe_keys_in_shards != nullptr) {
+        int64_t total = 0;
+        for (int64_t count : *maybe_keys_in_shards) {
+            total += count;
+        }
+        builder.overwrite("num_docs", convert_approx_doc_count_to_datum(total));
+    } else {
+        builder.overwrite("num_docs", ql::datum_t("unknown"));
+    }
+
     return std::move(builder).to_datum();
 }
+
+bool get_number_of_keys_in_shards(
+        const namespace_id_t &table_id,
+        real_reql_cluster_interface_t *reql_cluster_interface,
+        const table_shard_scheme_t &shard_scheme,
+        signal_t *interruptor,
+        std::vector<int64_t> *keys_in_shards_out) {
+    /* Perform a distribution query against the database */
+    namespace_interface_access_t ns_if_access =
+        reql_cluster_interface->get_namespace_repo()->get_namespace_interface(
+            table_id, interruptor);
+    static const int depth = 2;
+    static const int limit = 128;
+    distribution_read_t inner_read(depth, limit);
+    read_t read(inner_read, profile_bool_t::DONT_PROFILE);
+    read_response_t resp;
+    try {
+        ns_if_access.get()->read_outdated(read, &resp, interruptor);
+    } catch (cannot_perform_query_exc_t) {
+        return false;
+    }
+    /* Match the results of the distribution query against the given shard boundaries */
+    const std::map<store_key_t, int64_t> &counts =
+        boost::get<distribution_read_response_t>(resp.response).key_counts;
+    *keys_in_shards_out = std::vector<int64_t>(shard_scheme.num_shards(), 0);
+    for (auto it = counts.begin(); it != counts.end(); ++it) {
+        /* Calculate the range of shards that this key-range overlaps with */
+        size_t left_shard = shard_scheme.find_shard_for_key(it->first);
+        auto jt = it;
+        ++jt;
+        size_t right_shard;
+        if (jt == counts.end()) {
+            right_shard = shard_scheme.num_shards() - 1;
+        } else {
+            store_key_t right_key = jt->first;
+            bool ok = right_key.decrement();
+            guarantee(ok, "jt->first cannot be the leftmost key");
+            right_shard = shard_scheme.find_shard_for_key(right_key);
+        }
+        /* We assume that every shard that this key-range overlaps with has an equal
+        share of the keys in the key-range. This is shitty but oh well. */
+        for (size_t shard = left_shard; shard <= right_shard; ++shard) {
+            keys_in_shards_out->at(shard) += it->second / (right_shard - left_shard + 1);
+        }
+    }
+    return true;
+}
+
+/* RSI(reql_admin): Now that we're doing something that blocks in `read_row_impl()`, we
+consider if `read_row_impl()` should be run in parallel if the user fetches many rows at
+once. This will be much easier to implement once @vexocide's changes to
+`artificial_table_t` are merged in. */
 
 bool table_status_artificial_table_backend_t::read_row_impl(
         namespace_id_t table_id,
         name_string_t table_name,
         name_string_t db_name,
         const namespace_semilattice_metadata_t &metadata,
-        UNUSED signal_t *interruptor,
+        signal_t *interruptor,
         ql::datum_t *row_out,
         UNUSED std::string *error_out) {
     assert_thread();
+
+    std::vector<int64_t> keys_in_shards, *keys_in_shards_ptr;
+    if (get_number_of_keys_in_shards(table_id, reql_cluster_interface,
+            metadata.replication_info.get_ref().shard_scheme, interruptor,
+            &keys_in_shards)) {
+        keys_in_shards_ptr = &keys_in_shards;
+    } else {
+        keys_in_shards_ptr = nullptr;
+    }
+
     *row_out = convert_table_status_to_datum(
         table_name,
         db_name,
         table_id,
         metadata.replication_info.get_ref(),
         directory_view,
-        name_client);
+        name_client,
+        keys_in_shards_ptr);
     return true;
 }
 

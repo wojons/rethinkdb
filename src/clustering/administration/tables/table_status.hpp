@@ -13,6 +13,7 @@
 #include "clustering/administration/tables/table_common.hpp"
 #include "concurrency/watchable.hpp"
 
+class real_reql_cluster_interface_t;
 class server_name_client_t;
 
 class table_status_artificial_table_backend_t :
@@ -26,10 +27,12 @@ public:
                 databases_semilattice_metadata_t> > _database_sl_view,
             watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
                 namespace_directory_metadata_t> *_directory_view,
-            server_name_client_t *_name_client) :
+            server_name_client_t *_name_client,
+            real_reql_cluster_interface_t *_reql_cluster_interface) :
         common_table_artificial_table_backend_t(_table_sl_view, _database_sl_view),
         directory_view(_directory_view),
-        name_client(_name_client) { }
+        name_client(_name_client),
+        reql_cluster_interface(_reql_cluster_interface) { }
 
     bool read_row_impl(
             namespace_id_t table_id,
@@ -50,6 +53,7 @@ private:
     watchable_map_t<std::pair<peer_id_t, namespace_id_t>,
         namespace_directory_metadata_t> *directory_view;
     server_name_client_t *name_client;
+    real_reql_cluster_interface_t *reql_cluster_interface;
 };
 
 #endif /* CLUSTERING_ADMINISTRATION_TABLES_TABLE_STATUS_HPP_ */

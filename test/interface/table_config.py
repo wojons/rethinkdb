@@ -62,15 +62,16 @@ with driver.Metacluster() as metacluster:
             if len(s_shards) != len(c_shards):
                 return False
             for (s_shard, c_shard) in zip(s_shards, c_shards):
-                if set(doc["server"] for doc in s_shard) != set(c_shard["replicas"]):
+                if set(doc["name"] for doc in s_shard["servers"]) != \
+                        set(c_shard["replicas"]):
                     return False
-                s_directors = [doc["server"] for doc in s_shard
+                s_directors = [doc["name"] for doc in s_shard["servers"]
                                if doc["role"] == "director"]
                 if len(s_directors) != 1:
                     return False
                 if s_directors[0] != c_shard["director"]:
                     return False
-                if any(doc["state"] != "ready" for doc in s_shard):
+                if any(doc["state"] != "ready" for doc in s_shard["servers"]):
                     return False
             if not s_row["ready_for_outdated_reads"]:
                 return False

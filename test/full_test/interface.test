@@ -16,6 +16,7 @@ for interface_test_name in [
         'stat',
         'table_config',
         'table_reconfigure',
+        'table_status_num_docs',
         'unsatisfiable_goals_issue']:
     generate_test("$RETHINKDB/test/interface/%s.py" % interface_test_name, name=interface_test_name)
 
