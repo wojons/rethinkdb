@@ -17,23 +17,25 @@ bool common_table_artificial_table_backend_t::read_all_rows_as_vector(
     on_thread_t thread_switcher(home_thread());
     rows_out->clear();
     cow_ptr_t<namespaces_semilattice_metadata_t> md = table_sl_view->get();
-    for (auto it = md->namespaces.begin();
-              it != md->namespaces.end();
-            ++it) {
-        if (it->second.is_deleted()) {
-            continue;
-        }
-
-        name_string_t table_name = it->second.get_ref().name.get_ref();
-        name_string_t db_name = get_db_name(it->second.get_ref().database.get_ref());
-        ql::datum_t row;
-        if (!format_row(it->first, table_name, db_name, it->second.get_ref(),
-                        &interruptor2, &row, error_out)) {
-            return false;
-        }
-        rows_out->push_back(row);
-    }
-    return true;
+    static const int par_factor = 10;
+    bool result = true;
+    throttled_pmap(md->namespaces.begin(), md->namespaces.end(),
+        [&](const namespaces_semilattice_metadata_t::namespace_map_t::value_type &pair) {
+            if (pair.second.is_deleted()) {
+                return;
+            }
+            name_string_t table_name = pair.second.get_ref().name.get_ref();
+            name_string_t db_name = get_db_name(
+                pair.second.get_ref().database.get_ref());
+            ql::datum_t row;
+            if (!format_row(pair.first, table_name, db_name, pair.second.get_ref(),
+                            &interruptor2, &row, error_out)) {
+                result = false;
+                return;
+            }
+            rows_out->push_back(row);
+        }, par_factor);
+    return result;
 }
 
 bool common_table_artificial_table_backend_t::read_row(

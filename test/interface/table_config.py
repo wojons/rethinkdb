@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # Copyright 2010-2014 RethinkDB, all rights reserved.
-import sys, os, time, traceback
+import sys, os, time, traceback, pprint
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir, 'common')))
 import driver, scenario_common, utils
 from vcoptparse import *
@@ -103,8 +103,10 @@ with driver.Metacluster() as metacluster:
             config = list(r.db("rethinkdb").table("table_config").run(conn))
             status = list(r.db("rethinkdb").table("table_status").run(conn))
             print "Something went wrong."
-            print "config =", config
-            print "status =", status
+            print "config =",
+            pprint.pprint(config)
+            print "status ="
+            pprint.pprint(status)
             raise
 
     print "Creating a table..."

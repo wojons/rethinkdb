@@ -75,7 +75,7 @@ struct throttled_pmap_runner_t {
     int *outstanding;
     cond_t *to_signal;
     new_semaphore_acq_t semaphore_acq;
-    throttled_pmap_runner_t(value_t _i, const callable_t *_c, int *_outstanding,
+    throttled_pmap_runner_t(const value_t &_i, const callable_t *_c, int *_outstanding,
                             cond_t *_to_signal, new_semaphore_acq_t &&acq)
         : i(_i), c(_c), outstanding(_outstanding), to_signal(_to_signal),
           semaphore_acq(std::move(acq)) { }
@@ -89,6 +89,13 @@ struct throttled_pmap_runner_t {
         }
     }
 };
+
+template <class callable_t, class value_t>
+void spawn_throttled_pmap_runner(const value_t &i, const callable_t *c, int *outstanding,
+        cond_t *to_signal, new_semaphore_acq_t &&acq) {
+    coro_t::spawn_now_dangerously(throttled_pmap_runner_t<callable_t, value_t>(
+        i, c, outstanding, to_signal, std::move(acq)));
+}
 
 // TODO(2014-10): The types here are "int", but how do we know that won't overflow?
 template <class callable_t>
@@ -106,9 +113,7 @@ void throttled_pmap(int begin, int end, const callable_t &c, int64_t capacity) {
     for (int i = begin; i < end - 1; ++i) {
         new_semaphore_acq_t acq(&semaphore, 1);
         acq.acquisition_signal()->wait();
-        coro_t::spawn_now_dangerously(
-            throttled_pmap_runner_t<callable_t, int>(i, &c, &outstanding, &cond,
-                                                     std::move(acq)));
+        spawn_throttled_pmap_runner(i, &c, &outstanding, &cond, std::move(acq));
     }
 
     {
@@ -124,6 +129,26 @@ void throttled_pmap(int begin, int end, const callable_t &c, int64_t capacity) {
 template <class callable_t>
 void throttled_pmap(int count, const callable_t &c, int64_t capacity) {
     throttled_pmap(0, count, c, capacity);
+}
+
+template <class callable_t, class iterator_t>
+void throttled_pmap(iterator_t start, iterator_t end, const callable_t &c,
+        int64_t capacity) {
+    guarantee(capacity > 0);
+    new_semaphore_t semaphore(capacity);
+    cond_t cond;
+    int outstanding = 1;
+    while (start != end) {
+        ++outstanding;
+        new_semaphore_acq_t acq(&semaphore, 1);
+        acq.acquisition_signal()->wait();
+        spawn_throttled_pmap_runner(*start, &c, &outstanding, &cond, std::move(acq));
+        ++start;
+    }
+    --outstanding;
+    if (outstanding != 0) {
+        cond.wait();
+    }
 }
 
 #endif /* CONCURRENCY_PMAP_HPP_ */

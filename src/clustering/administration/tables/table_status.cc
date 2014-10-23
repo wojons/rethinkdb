@@ -44,7 +44,7 @@ ql::datum_t convert_director_status_to_datum(
         const std::vector<reactor_activity_entry_t> *status,
         bool *has_director_out) {
     ql::datum_object_builder_t object_builder;
-    object_builder.overwrite("server", convert_name_to_datum(name));
+    object_builder.overwrite("name", convert_name_to_datum(name));
     object_builder.overwrite("role", ql::datum_t("director"));
     const char *state;
     *has_director_out = false;
@@ -69,7 +69,7 @@ ql::datum_t convert_director_status_to_datum(
             }
         }
     }
-    object_builder.overwrite("name", ql::datum_t(state));
+    object_builder.overwrite("state", ql::datum_t(state));
     return std::move(object_builder).to_datum();
 }
 
@@ -79,7 +79,7 @@ ql::datum_t convert_replica_status_to_datum(
         bool *has_outdated_reader_out,
         bool *has_replica_out) {
     ql::datum_object_builder_t object_builder;
-    object_builder.overwrite("server", convert_name_to_datum(name));
+    object_builder.overwrite("name", convert_name_to_datum(name));
     object_builder.overwrite("role", ql::datum_t("replica"));
     const char *state;
     *has_outdated_reader_out = *has_replica_out = false;
@@ -110,7 +110,7 @@ ql::datum_t convert_replica_status_to_datum(
             }
         }
     }
-    object_builder.overwrite("name", ql::datum_t(std::move(state)));
+    object_builder.overwrite("state", ql::datum_t(std::move(state)));
     return std::move(object_builder).to_datum();
 }
 
@@ -409,11 +409,6 @@ bool get_number_of_keys_in_shards(
     }
     return true;
 }
-
-/* RSI(reql_admin): Now that we're doing something that blocks in `read_row_impl()`, we
-consider if `read_row_impl()` should be run in parallel if the user fetches many rows at
-once. This will be much easier to implement once @vexocide's changes to
-`artificial_table_t` are merged in. */
 
 bool table_status_artificial_table_backend_t::format_row(
         namespace_id_t table_id,
