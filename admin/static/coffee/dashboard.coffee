@@ -135,10 +135,20 @@ module 'DashboardView', ->
                 model: @model
 
             @stats = new Stats
-            @stats_timer = driver.run r.expr(
-                keys_read: r.random(2000, 3000)
-                keys_set: r.random(1500, 2500)
-            ), 1000, @stats.on_result
+            @stats_timer = do =>
+                fake_reads =  [9,9,9, 9,9,9, 9,9,6, 6, 6,7,8, 9,9,9, 8,7,3, 2, 0,9,9,9, 8,7,6, 6, 6,7,8, 9,9,9, 8,7,3, 4,5,6,7,8]
+                fake_writes = [9,6,6, 0,0,0, 6,6,6, 6, 6,2,1, 0,0,0, 1,2,3, 2, 0,0,0,0, 1,2,6, 6, 6,2,1, 0,0,0, 1,2,3, 4,5,6,7,8]
+                index = 0
+                setInterval =>
+                    @stats.on_result null,
+                        keys_read: fake_reads[index % fake_reads.length]
+                        keys_set: fake_writes[index % fake_reads.length]
+                    index++
+                , 1000
+            # @stats_timer = driver.run r.expr(
+            #     keys_read: r.random(2000, 3000)
+            #     keys_set: r.random(1500, 2500)
+            # ), 1000, @stats.on_result
 
             @cluster_performance = new Vis.OpsPlot(@stats.get_stats,
                 width:  833             # width in pixels
