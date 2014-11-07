@@ -109,7 +109,7 @@ module 'DataExplorerView', ->
         # Note: the callbacks are not ordered. In this code, `f` is
         # never called: `qr.shift 2 f; cb = -> qr.shift 1 cb`
         shift: (n, k) =>
-            cb = => 
+            cb = =>
                 if @results.length > n or @ended
                     @off 'end', cb
                     ret = @results[0...n]
@@ -144,14 +144,13 @@ module 'DataExplorerView', ->
         fetch_next: =>
             if not @ended
                 try
-                    @cursor.next (error, row) =>
-                        if error?
-                            if error.message is 'No more rows in the cursor.'
-                                @ended = true
-                                @trigger 'end', @
-                            else
-                                @set_error error
-                        else
+                    @driver_handler.cursor_next @cursor,
+                        end: () =>
+                            @ended = true
+                            @trigger 'end', @
+                        error: (error) =>
+                            @set_error error
+                        row: (row) =>
                             if @discard_results
                                 return
                             @results.push row
@@ -185,7 +184,7 @@ module 'DataExplorerView', ->
         limit: 40 # How many results we display per page // Final for now
         line_height: 13 # Define the height of a line (used for a line is too long)
         size_history: 50
-        
+
         max_size_stack: 100 # If the stack of the query (including function, string, object etc. is greater than @max_size_stack, we stop parsing the query
         max_size_query: 1000 # If the query is more than 1000 char, we don't show suggestion (codemirror doesn't highlight/parse if the query is more than 1000 characdd_ters too
 
@@ -381,7 +380,7 @@ module 'DataExplorerView', ->
         #   size: size of the collapsible panel we want // If not specified, we are going to try to figure it out ourselves
         #   no_animation: boolean (do we need to animate things or just to show it)
         #   is_at_bottom: boolean (if we were at the bottom, we want to scroll down once we have added elements in)
-        #   delay_scroll: boolean, true if we just added a query - It speficied if we adjust the height then scroll or do both at the same time 
+        #   delay_scroll: boolean, true if we just added a query - It speficied if we adjust the height then scroll or do both at the same time
         adjust_collapsible_panel_height: (args) =>
             that = @
             if args?.size?
@@ -507,7 +506,7 @@ module 'DataExplorerView', ->
                 returns = returns.concat return_values
                 for parent_value in parent_values
                     parents[parent_value] = true
-                
+
             if full_tag isnt '('
                 for parent_value of parents
                     if not suggestions[parent_value]?
@@ -692,7 +691,7 @@ module 'DataExplorerView', ->
         render: =>
             @$el.html @template()
             @$('.input_query_full_container').html @input_query_template()
-            
+
             # Check if the browser supports the JavaScript driver
             # We do not support internet explorer (even IE 10) and old browsers.
             if navigator?.appName is 'Microsoft Internet Explorer'
@@ -723,7 +722,7 @@ module 'DataExplorerView', ->
             # If driver not conneced
             if @driver_connected is false
                 @error_on_connect()
-    
+
             return @
 
         # This method has to be called AFTER the el element has been inserted in the DOM tree, mostly for codemirror
@@ -744,7 +743,7 @@ module 'DataExplorerView', ->
             if @state.current_query?
                 @codemirror.setValue @state.current_query
             @codemirror.focus() # Give focus
-            
+
             # Track if the focus is on codemirror
             # We use it to refresh the docs once the reql_docs.json is loaded
             @state.focus_on_codemirror = true
@@ -791,7 +790,7 @@ module 'DataExplorerView', ->
             ',': true
             ';': true
             ']': true
-            
+
         handle_click: (event) =>
             @handle_keypress null, event
 
@@ -847,7 +846,7 @@ module 'DataExplorerView', ->
                         next_char = @get_next_char()
                         if next_char is char_to_insert # Next char is a single quote
                             if num_quote%2 is 0
-                                if last_element_incomplete_type is 'string' or last_element_incomplete_type is 'object_key' # We are at the end of a string and the user just wrote a quote 
+                                if last_element_incomplete_type is 'string' or last_element_incomplete_type is 'object_key' # We are at the end of a string and the user just wrote a quote
                                     @move_cursor 1
                                     event.preventDefault()
                                     return true
@@ -858,7 +857,7 @@ module 'DataExplorerView', ->
                                 # Let's add the closing/opening quote missing
                                 return true
                         else
-                            if num_quote%2 is 0 # Next char is not a single quote and the user has an even number of quotes. 
+                            if num_quote%2 is 0 # Next char is not a single quote and the user has an even number of quotes.
                                 # Let's keep a number of quote even, so we add one extra quote
                                 last_key = @get_last_key(stack)
                                 if last_element_incomplete_type is 'string'
@@ -952,7 +951,7 @@ module 'DataExplorerView', ->
                         is_parsing_string = true
                         string_delimiter = char
                         continue
-                    
+
                     result_inline_comment = @regex.inline_comment.exec query.slice i
                     if result_inline_comment?
                         to_skip = result_inline_comment[0].length-1
@@ -1002,7 +1001,7 @@ module 'DataExplorerView', ->
                         is_parsing_string = true
                         string_delimiter = char
                         continue
-                    
+
                     result_inline_comment = @regex.inline_comment.exec query.slice i
                     if result_inline_comment?
                         to_skip = result_inline_comment[0].length-1
@@ -1077,7 +1076,7 @@ module 'DataExplorerView', ->
                         # create_suggestion is going to fill to_complete and to_describe
                         #to_complete: undefined
                         #to_describe: undefined
-                        
+
                     # Create the suggestion/description
                     @create_suggestion
                         stack: stack
@@ -1232,7 +1231,7 @@ module 'DataExplorerView', ->
                                         @current_highlighted_extra_suggestion--
                                     else
                                         @current_highlighted_extra_suggestion++
-                                        
+
                                     if @current_highlighted_extra_suggestion >= @extra_suggestions.length
                                         @current_highlighted_extra_suggestion = -1
                                     else if @current_highlighted_extra_suggestion < -1
@@ -1257,7 +1256,7 @@ module 'DataExplorerView', ->
                                             string_delimiter = "'"
                                             move_outside = true
                                         suggestion = string_delimiter+@extra_suggestions[@current_highlighted_extra_suggestion]+string_delimiter
-                                    
+
                                     @write_suggestion
                                         move_outside: move_outside
                                         suggestion_to_write: suggestion
@@ -1330,7 +1329,7 @@ module 'DataExplorerView', ->
 
             # We are scrolling in history
             if @history_displayed_id isnt 0 and event?
-                # We catch ctrl, shift, alt and command 
+                # We catch ctrl, shift, alt and command
                 if event.ctrlKey or event.shiftKey or event.altKey or event.which is 16 or event.which is 17 or event.which is 18 or event.which is 20 or (event.which is 91 and event.type isnt 'keypress') or event.which is 92 or event.type of @mouse_type_event
                     return false
 
@@ -1416,7 +1415,7 @@ module 'DataExplorerView', ->
                 # create_suggestion is going to fill to_complete and to_describe
                 #to_complete: undefined
                 #to_describe: undefined
-                
+
             # If we are in the middle of a function (text after the cursor - that is not an element in @char_breakers or a comment), we just show a description, not a suggestion
             result_non_white_char_after_cursor = @regex.get_first_non_white_char.exec(query_after_cursor)
 
@@ -1627,7 +1626,7 @@ module 'DataExplorerView', ->
                                 stack_stop_char = ['{']
                                 continue
 
-                            # Check for a for loop 
+                            # Check for a for loop
                             result_regex = @regex.loop.exec query.slice i
                             if result_regex isnt null
                                 element.type = 'loop'
@@ -1636,7 +1635,7 @@ module 'DataExplorerView', ->
                                 body_start = i+result_regex[0].length
                                 stack_stop_char = ['{']
                                 continue
-                                                       
+
                             # Check for return
                             result_regex = @regex.return.exec query.slice i
                             if result_regex isnt null
@@ -2334,7 +2333,7 @@ module 'DataExplorerView', ->
 
             @$('.suggestion_name_list').show()
             @$('.arrow').show()
-        
+
         # If want to show suggestion without moving the arrow
         show_suggestion_without_moving: =>
             @$('.arrow').show()
@@ -2395,7 +2394,7 @@ module 'DataExplorerView', ->
             @remove_highlight_suggestion()
             @$('.suggestion_name_li').eq(id).addClass 'suggestion_name_li_hl'
             @$('.suggestion_description').html @description_template @extend_description @current_suggestions[id]
-            
+
             @$('.suggestion_description').show()
 
         remove_highlight_suggestion: =>
@@ -2554,7 +2553,7 @@ module 'DataExplorerView', ->
             @raw_query = @codemirror.getValue()
 
             @query = @clean_query @raw_query # Save it because we'll use it in @callback_multilples_queries
-            
+
             # Execute the query
             try
                 @state.query_result?.discard()
@@ -2580,7 +2579,9 @@ module 'DataExplorerView', ->
                     broken_query: true
 
         toggle_executing: (executing) =>
-            if executing is true
+            if executing == @executing
+                return
+            else if executing is true
                 @executing = true
                 @timeout_show_abort = setTimeout =>
                     #TODO Delay a few ms
@@ -2780,7 +2781,7 @@ module 'DataExplorerView', ->
             is_parsing_string = false
             stack = []
             start = 0
-            
+
             position =
                 char: 0
                 line: 1
@@ -2814,7 +2815,7 @@ module 'DataExplorerView', ->
                     if result_multiple_line_comment?
                         to_skip = result_multiple_line_comment[0].length-1
                         continue
-                    
+
 
                     if char of @stop_char.opening
                         stack.push char
@@ -3191,7 +3192,7 @@ module 'DataExplorerView', ->
             return @templates.td_value
                 col: col
                 cell_content: @templates.td_value_content data
-            
+
         compute_data_for_type: (value,  col) =>
             data =
                 value: value
@@ -3245,7 +3246,7 @@ module 'DataExplorerView', ->
                     data_cell['need_comma'] = true
 
                 result += @templates.data_inline data_cell
-                 
+
             return result
 
         # Build the table
@@ -3297,7 +3298,7 @@ module 'DataExplorerView', ->
             @copy_parent_results()
 
             previous_keys = @parent.container.state.last_keys # Save previous keys. @last_keys will be updated in @json_to_table
-            if Object::toString.call(@results) is '[object Array]' 
+            if Object::toString.call(@results) is '[object Array]'
                 if @results.length is 0
                     @$el.html @templates.wrapper content: @template_no_result()
                 else
@@ -3365,7 +3366,7 @@ module 'DataExplorerView', ->
 
         template: Handlebars.templates['dataexplorer_result_raw-template']
 
-        init_after_dom_rendered: => 
+        init_after_dom_rendered: =>
             height = @$('.raw_view_textarea')[0].scrollHeight
             if height > 0
                 @$('.raw_view_textarea').height(height)
@@ -3379,7 +3380,7 @@ module 'DataExplorerView', ->
 
         template:
             Handlebars.templates['dataexplorer_result_profile-template']
-        
+
         initialize: (args) =>
             super args
             ZeroClipboard.setDefaults
@@ -3415,7 +3416,7 @@ module 'DataExplorerView', ->
 
         render: =>
             @copy_parent_results()
-            
+
             if not @ATN_profile?
                 @$el.html @template {}
             else
@@ -3679,7 +3680,7 @@ module 'DataExplorerView', ->
         dataexplorer_history_template: Handlebars.templates['dataexplorer-history-template']
         dataexplorer_query_li_template: Handlebars.templates['dataexplorer-query_li-template']
         className: 'history_container'
-        
+
         size_history_displayed: 300
         state: 'hidden' # hidden, visible
         index_displayed: 0
@@ -3794,7 +3795,8 @@ module 'DataExplorerView', ->
                 is_at_bottom: 'true'
 
     class DriverHandler
-        constructor: ({@container}) ->
+        constructor: (container) ->
+            @container = container
 
         close_connection: =>
             if @connection?.open is true
@@ -3805,13 +3807,31 @@ module 'DataExplorerView', ->
         run_with_new_connection: ({query, callback, connection_error}) =>
             @close_connection()
 
+            @container.toggle_executing true
             driver.connect (error, connection) =>
                 if error?
+                    @container.toggle_executing false
                     connection_error error
                 connection.removeAllListeners 'error' # See issue 1347
-                connection.on 'error', connection_cb
+                connection.on 'error', (error) =>
+                    @container.toggle_executing false
+                    connection_error error
                 @connection = connection
-                cb(error, connection)
+                query.private_run connection, (error, result) =>
+                    @container.toggle_executing false
+                    callback error, result
+
+        cursor_next: ({cursor, error, row, end}) =>
+            @container.toggle_executing true
+            cursor.next (err, row_) =>
+                @container.toggle_executing false
+                if error?
+                    if error.message is 'No more rows in the cursor.'
+                        end()
+                    else
+                        error err
+                else
+                    row row_
 
         remove: =>
             @close_connection()
@@ -3945,7 +3965,7 @@ module 'DataExplorerView', ->
             # We build the tree in a recursive way
             return json_to_node = (value) ->
                 value_type = typeof value
-                
+
                 output = ''
                 if value is null
                     return template.span
