@@ -279,7 +279,6 @@ read_args () {
             --with-tcmalloc) $no_arg; set_custom_allocator tcmalloc ;;
             --with-jemalloc) $no_arg; set_custom_allocator jemalloc ;;
             --with-system-malloc) $no_arg; set_custom_allocator system ;;
-            --without-tcmalloc) $no_arg; echo "Warning: Ignoring deprecated flag --without-tcmalloc" ;;
             --enable-precompiled-web) $no_arg; enable_precompiled_web=true ;;
             --disable-precompiled-web) $no_arg; enable_precompiled_web=false ;;
             --ccache) $no_arg; use_ccache=true ;;

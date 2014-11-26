@@ -335,7 +335,7 @@ ifeq ($(filter -l%, $(value MALLOC_LIBS)),) # if the allocator is not dynamicall
     MAYBE_CHECK_STATIC_MALLOC += (echo "Failed to link in TCMalloc." >&2 && false)
   else ifeq (jemalloc,$(ALLOCATOR))
     RT_LDFLAGS += -ldl
-    MAYBE_CHECK_STATIC_MALLOC = objdump -T $@ | grep -q 'mallctlnametomib' ||
+    MAYBE_CHECK_STATIC_MALLOC = objdump -T $@ | grep -w -q 'mallctlnametomib' ||
     MAYBE_CHECK_STATIC_MALLOC += (echo "Failed to link in jemalloc." >&2 && false)
   endif
 endif
