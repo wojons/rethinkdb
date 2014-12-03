@@ -3368,3 +3368,36 @@ TODO: retire this
     }
 }
 
+.reconfigure-panel {
+    font-family: @sans;
+    .reconfigure-form {
+        display: none;
+        .edit-shards, .edit-replicas {
+            width: 3em;
+        }
+    }
+    .reconfigure-diff {
+        display: none;
+        .deleted {
+            font-weight: bold;
+            color: red;
+            background-color: #fee;
+        }
+        span.deleted::after {
+            content: "-";
+            vertical-align: super;
+        }
+        .added {
+            font-weight: bold;
+            color: green;
+            background-color: #efe;
+        }
+        span.added::after {
+            content: "+";
+            vertical-align: super;
+        }
+        li.replica {
+            padding-left: 2em;
+        }
+    }
+}

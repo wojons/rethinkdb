@@ -230,8 +230,6 @@ module 'TableView', ->
             @distribution = data.distribution
             @shards_assignments = data.shards_assignments
 
-            #TODO Load distribution
-
             # Panels for namespace view
             @title = new TableView.Title
                 model: @model
@@ -249,11 +247,23 @@ module 'TableView', ->
             @server_assignments = new TableView.ShardAssignmentsView
                 model: @model
                 collection: @shards_assignments
+            @reconfigure = new TableView.Reconfigure
+                parent_model: @model
+                model: new Reconfigure({
+                    shards: []
+                    editing: false
+                    num_shards: @model.get('num_shards')
+                    num_replicas: @model.get('num_replicas_per_shard')
+                })
 
             @stats = new Stats
             @stats_timer = driver.run(
-                r.db('rethinkdb').table('stats')
+                r.db('rethinkdb_mock').table('stats')
                 .get(["table", @model.get('id')])
+                .default
+                    query_engine:
+                        read_docs_per_sec: 23
+                        written_docs_per_sec: 100
                 .do((stat) ->
                     keys_read: stat('query_engine')('read_docs_per_sec')
                     keys_set: stat('query_engine')('written_docs_per_sec')
@@ -303,6 +313,9 @@ module 'TableView', ->
             # Display the secondary indexes
             @$('.secondary_indexes').html @secondary_indexes_view.render().el
 
+            # Display server reconfiguration
+            @$('.reconfigure-panel').html @reconfigure.render().el
+
             @
 
         close_alert: (event) ->
@@ -348,6 +361,7 @@ module 'TableView', ->
             @server_assignments.remove()
             @performance_graph.remove()
             @secondary_indexes_view.remove()
+            @reconfigure.remove()
 
             driver.stop_timer @stats_timer
 
@@ -357,6 +371,186 @@ module 'TableView', ->
             if @rename_modal?
                 @rename_modal.remove()
             super()
+
+    # TableView.Reconfigure
+    class @Reconfigure extends Backbone.View
+        className: 'reconfigure-panel'
+        template: Handlebars.templates['reconfigure']
+        events:
+            'click .edit': 'start_editing'
+            'click .cancel': 'cancel_editing'
+            'keyup .edit-replicas': 'change_replicas'
+            'keyup .edit-shards': 'change_shards'
+
+        initialize: (obj) =>
+            @parent_model = obj.parent_model
+            @listenTo @model, "change:editing", @change_editing
+            #@listenTo @model, "change:error", @render_error
+            @listenTo @model, "change:num_replicas", @fetch_dryrun
+            @listenTo @model, "change:num_shards", @fetch_dryrun
+        remove: =>
+            if diff_view?
+                diff_view.remove()
+            super()
+
+        change_editing: =>
+            if @model.get('editing')
+                console.log 'editing!'
+                @$('.edit.btn').hide()
+                @$('.reconfigure-form').slideDown('fast')
+            else
+                console.log 'un-editing!'
+                @$('.edit.btn').show()
+                @$('.reconfigure-form').slideUp('fast')
+
+        start_editing: =>
+            @model.set 'editing', true
+            @fetch_dryrun()
+
+        cancel_editing: =>
+            @model.set 'editing', false
+
+        change_replicas: =>
+            num = parseInt @$('.edit-replicas').val()
+            if not isNaN num
+                @model.set 'num_replicas', num
+
+        change_shards: =>
+            num = parseInt @$('.edit-shards').val()
+            if not isNaN num
+                @model.set 'num_shards', num
+
+        render: =>
+            @$el.html @template @model.toJSON()
+            @diff_view = new TableView.ReconfigureDiffView
+                model: @model
+                el: @$('.reconfigure-diff')[0]
+            @
+
+        fetch_dryrun: =>
+            if not @model.get('num_shards')? or not @model.get('num_replicas')?
+                return
+            query = r.db(@parent_model.get('db'))
+                .table(@parent_model.get('name'))
+                .reconfigure
+                    shards: @model.get('num_shards')
+                    replicas: @model.get('num_replicas')
+                    dryRun: true
+                .do((diff) ->
+                    r.object(r.args(diff.keys().map((key) ->
+                        [key, diff(key)('config')('shards')]
+                    ).concatMap((x)->x)))
+                )
+            driver.run_once query, (error, result) =>
+                if error?
+                    @model.set
+                        error: error.message
+                else
+                    console.log 'received server response'
+                    @model.set
+                        shards: @fixup_shards result.old_val, result.new_val
+                        editing: true
+                        error: null
+
+        # Sorts shards in order of current primary first, old primary (if
+        # any), then secondaries in lexicographic order
+        shard_sort: (a, b) ->
+            if a.role == 'primary'
+                -1
+            else if 'primary' in [b.role, b.old_role]
+                +1
+            else if a.role == b.role
+                if a.name == b.name
+                    0
+                else if a.name < b.name
+                    -1
+                else
+                    +1
+
+        # determines role of a replica
+        role: (isPrimary) ->
+            if isPrimary then 'primary' else 'secondary'
+
+        fixup_shards: (old_shards, new_shards) ->
+            shard_diffs = []
+
+            # first handle shards that are in old (and possibly in new)
+            for old_shard, i in old_shards
+                if i >= new_shards.length
+                    new_shard = {director: null, replicas: []}
+                    shard_deleted = true
+                else
+                    new_shard = new_shards[i]
+                    shard_deleted = false
+
+                shard_diff =
+                    replicas: []
+                    change: if shard_deleted then 'deleted' else null
+
+                # handle any deleted and remaining replicas for this shard
+                for replica in old_shard.replicas
+                    replica_deleted = replica not in new_shard.replicas
+                    if replica_deleted
+                        new_role = null
+                    else
+                        new_role = @role(replica == new_shard.director)
+                    old_role = @role(replica == old_shard.director)
+
+                    shard_diff.replicas.push
+                        name: replica
+                        change: if replica_deleted then 'deleted' else null
+                        role: new_role
+                        old_role: old_role
+                        role_change: not replica_deleted and new_role != old_role
+                # handle any new replicas for this shard
+                for replica in new_shard.replicas
+                    if replica in old_shard.replicas
+                        continue
+                    shard_diff.replicas.push
+                        name: replica
+                        change: 'added'
+                        role: @role(replica == new_shard.director)
+                        old_role: null
+                        role_change: false
+
+                shard_diff.replicas.sort @shard_sort
+                shard_diffs.push(shard_diff)
+            # now handle any new shards beyond what old_shards has
+            for new_shard in new_shards.slice(old_shards.length)
+                shard_diff =
+                    replicas: []
+                    change: 'added'
+                for replica in new_shard.replicas
+                    shard_diff.replicas.push
+                        name: replica
+                        change: 'added'
+                        role: @role(replica == new_shard.director)
+                        old_role: null
+                        role_change: false
+                shard_diff.replicas.sort @shard_sort
+                shard_diffs.push(shard_diff)
+            shard_diffs
+
+    # TableView.ReconfigureDiffView
+    class @ReconfigureDiffView extends Backbone.View
+        className: 'reconfigure-diff'
+        template: Handlebars.templates['reconfigure-diff']
+        initialize: =>
+            console.log 'initializing diff-view'
+            @listenTo @model, 'change:shards', @render
+            @listenTo @model, 'change:editing', @change_editing
+
+        change_editing: =>
+            console.log 'editing changed to', @model.get('editing')
+            if @model.get('editing')
+                @$el.slideDown()
+            else
+                @$el.slideUp()
+
+        render: =>
+            console.log 'rendering diff-view'
+            @$el.html @template @model.toJSON()
+            @
 
     # TableView.Title
     class @Title extends Backbone.View

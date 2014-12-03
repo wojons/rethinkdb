@@ -1,0 +1,22 @@
+<ul>
+  {{#each shards}}
+  <li class="{{change}}">
+    <span class="{{change}}">Shard {{@index}}</span>
+  </li>
+  {{#each replicas}}
+  <li class="replica {{change}}">
+    <span class="{{change}}">{{name}}</span>
+    {{#unless role_change}}
+    {{#if role}}
+    [{{role}} replica]
+    {{else}}
+    [{{old_role}} replica]
+    {{/if}}
+    {{else}}
+    <span class="deleted">[{{old_role}} replica]</span> <b>&rarr;</b>
+    <span class="added">[{{role}} replica]</span>
+    {{/unless}}
+  </li>
+  {{/each}}
+  {{/each}}
+</ul>

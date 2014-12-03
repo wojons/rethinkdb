@@ -1,0 +1,12 @@
+<h2 class="title">Reconfigure table</h2>
+<button class="edit btn">Edit</button>
+<form class="reconfigure-form">
+  <input class="edit-shards" value="{{num_shards}}"></input> shards
+  <input class="edit-replicas" value="{{num_replicas}}"></input> replicas per shard
+  <button class="save btn">Apply</button>
+  <button class="cancel btn">&times;</button>
+</form>
+{{#if error}}
+<pre>{{error}}</pre>
+{{/if}}
+<div class='reconfigure-diff'></div>
